@@ -38,4 +38,5 @@ type PodInfo struct {
 	Namespace string
 	Container string
 	VGPU      string
+	GPU       string
 }

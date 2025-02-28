@@ -23,6 +23,7 @@ import (
 	"net"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -151,6 +152,8 @@ func (p *PodMapper) Process(metrics collector.MetricsByCounter, deviceInfo devic
 					metrics[counter][j].Attributes[oldNamespaceAttribute] = podInfo.Namespace
 					metrics[counter][j].Attributes[oldContainerAttribute] = podInfo.Container
 				}
+				// hack the gpu use  idx in the container of pod idx not in the host
+				metrics[counter][j].GPU = podInfo.GPU
 			}
 		}
 	}
@@ -327,6 +330,70 @@ func (p *PodMapper) toDeviceToPod(
 					// Default mapping between deviceID and pod information
 					deviceToPodMap[deviceID] = podInfo
 				}
+			}
+		}
+	}
+	gpuIndexMap := make(map[string]int)
+	for i, gpu := range deviceInfo.GPUs() {
+		gpuIndexMap[gpu.DeviceInfo.UUID] = i
+	}
+	// add the index of the GPU in the pod
+	podGpusMap := make(map[string][]string)
+	for deviceID, podInfo := range deviceToPodMap {
+		gpuIndex, ok := gpuIndexMap[deviceID]
+
+		if !ok {
+			slog.Error("GPU not found in deviceInfo", "deviceID", deviceID, "gpuIndexMap", gpuIndexMap)
+			continue
+		}
+
+		key := fmt.Sprintf("%s-%s-%s", podInfo.Namespace, podInfo.Name, podInfo.Container)
+		id_device := fmt.Sprintf("%02d_%s", gpuIndex, deviceID)
+
+		devicelists, ok := podGpusMap[key]
+		if !ok {
+			podGpusMap[key] = []string{id_device}
+			continue
+		}
+		// Find insertion point while checking for duplicates
+		insertIndex := 0
+		for i, device := range devicelists {
+			if device == id_device {
+				// Skip if device already exists
+				continue
+			}
+			if device > id_device {
+				insertIndex = i
+				break
+			}
+			insertIndex = i + 1
+		}
+
+		// Only insert if not a duplicate
+		if insertIndex < len(devicelists) && devicelists[insertIndex] != id_device {
+			devicelists = append(devicelists, "")
+			copy(devicelists[insertIndex+1:], devicelists[insertIndex:])
+			devicelists[insertIndex] = id_device
+		} else if insertIndex == len(devicelists) {
+			devicelists = append(devicelists, id_device)
+		}
+		podGpusMap[key] = devicelists
+	}
+
+	// update podInfo gpu idx by podGpusMap
+	for deviceID, podInfo := range deviceToPodMap {
+		key := fmt.Sprintf("%s-%s-%s", podInfo.Namespace, podInfo.Name, podInfo.Container)
+		devicelists, ok := podGpusMap[key]
+		if !ok {
+			continue
+		}
+
+		for idx, id_device := range devicelists {
+			if strings.HasSuffix(id_device, deviceID) {
+				podInfo := deviceToPodMap[deviceID]
+				podInfo.GPU = strconv.Itoa(idx)
+				deviceToPodMap[deviceID] = podInfo
+				break
 			}
 		}
 	}
