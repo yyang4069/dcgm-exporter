@@ -272,6 +272,74 @@ func (p *PodMapper) toDeviceToSharingPods(devicePods *podresourcesapi.ListPodRes
 		}
 	}
 
+	gpuIndexMap := make(map[string]int)
+	for i, gpu := range deviceInfo.GPUs() {
+		gpuIndexMap[gpu.DeviceInfo.UUID] = i
+	}
+	// add the index of the GPU in the pod
+	podGpusMap := make(map[string][]string)
+	for deviceID, podInfos := range deviceToPodsMap {
+		gpuIndex, ok := gpuIndexMap[deviceID]
+
+		if !ok {
+			slog.Error("GPU not found in deviceInfo", "deviceID", deviceID, "gpuIndexMap", gpuIndexMap)
+			continue
+		}
+		for _, podInfo := range podInfos {
+
+			key := fmt.Sprintf("%s-%s-%s", podInfo.Namespace, podInfo.Name, podInfo.Container)
+			id_device := fmt.Sprintf("%02d_%s", gpuIndex, deviceID)
+
+			devicelists, ok := podGpusMap[key]
+			if !ok {
+				podGpusMap[key] = []string{id_device}
+				continue
+			}
+			// Find insertion point while checking for duplicates
+			insertIndex := 0
+			for i, device := range devicelists {
+				if device == id_device {
+					// Skip if device already exists
+					continue
+				}
+				if device > id_device {
+					insertIndex = i
+					break
+				}
+				insertIndex = i + 1
+			}
+
+			// Only insert if not a duplicate
+			if insertIndex < len(devicelists) && devicelists[insertIndex] != id_device {
+				devicelists = append(devicelists, "")
+				copy(devicelists[insertIndex+1:], devicelists[insertIndex:])
+				devicelists[insertIndex] = id_device
+			} else if insertIndex == len(devicelists) {
+				devicelists = append(devicelists, id_device)
+			}
+			podGpusMap[key] = devicelists
+		}
+	}
+
+	// update podInfo gpu idx by podGpusMap
+	for deviceID, podInfos := range deviceToPodsMap {
+		for _, podInfo := range podInfos {
+
+			key := fmt.Sprintf("%s-%s-%s", podInfo.Namespace, podInfo.Name, podInfo.Container)
+			devicelists, ok := podGpusMap[key]
+			if !ok {
+				continue
+			}
+
+			for idx, id_device := range devicelists {
+				if strings.HasSuffix(id_device, deviceID) {
+					podInfo.GPU = strconv.Itoa(idx)
+					break
+				}
+			}
+		}
+	}
+
 	return deviceToPodsMap
 }
 
@@ -390,9 +458,7 @@ func (p *PodMapper) toDeviceToPod(
 
 		for idx, id_device := range devicelists {
 			if strings.HasSuffix(id_device, deviceID) {
-				podInfo := deviceToPodMap[deviceID]
 				podInfo.GPU = strconv.Itoa(idx)
-				deviceToPodMap[deviceID] = podInfo
 				break
 			}
 		}
