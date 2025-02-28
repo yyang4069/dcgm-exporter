@@ -323,8 +323,8 @@ func (p *PodMapper) toDeviceToSharingPods(devicePods *podresourcesapi.ListPodRes
 
 	// update podInfo gpu idx by podGpusMap
 	for deviceID, podInfos := range deviceToPodsMap {
-		for _, podInfo := range podInfos {
-
+		for i := range podInfos {
+			podInfo := &podInfos[i]
 			key := fmt.Sprintf("%s-%s-%s", podInfo.Namespace, podInfo.Name, podInfo.Container)
 			devicelists, ok := podGpusMap[key]
 			if !ok {
@@ -339,6 +339,7 @@ func (p *PodMapper) toDeviceToSharingPods(devicePods *podresourcesapi.ListPodRes
 			}
 		}
 	}
+	fmt.Printf("deviceToPodsMap: %v", deviceToPodsMap)
 
 	return deviceToPodsMap
 }
@@ -458,11 +459,14 @@ func (p *PodMapper) toDeviceToPod(
 
 		for idx, id_device := range devicelists {
 			if strings.HasSuffix(id_device, deviceID) {
+				podInfo := deviceToPodMap[deviceID]
 				podInfo.GPU = strconv.Itoa(idx)
+				deviceToPodMap[deviceID] = podInfo
 				break
 			}
 		}
 	}
+	fmt.Printf("deviceToPodMap: %v", deviceToPodMap)
 
 	return deviceToPodMap
 }
