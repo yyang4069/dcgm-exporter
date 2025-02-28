@@ -24,8 +24,8 @@ DCGM_VERSION   := $(NEW_DCGM_VERSION)
 GOLANG_VERSION := 1.22.9
 VERSION        := $(NEW_EXPORTER_VERSION)
 FULL_VERSION   := $(DCGM_VERSION)-$(VERSION)
-OUTPUT         := type=oci,dest=/dev/null
-PLATFORMS      := linux/amd64,linux/arm64
+OUTPUT         ?= type=oci,dest=/dev/null
+PLATFORMS      := linux/amd64
 DOCKERCMD      := docker --debug buildx build
 MODULE         := github.com/NVIDIA/dcgm-exporter
 
@@ -74,7 +74,6 @@ ubuntu22.04: IMAGE_TAG = ubuntu22.04
 	@echo "Building for $@"
 	DOCKER_BUILDKIT=1 \
 	$(DOCKERCMD) --pull \
-		--output $(OUTPUT) \
 		--progress=plain \
 		--no-cache \
 		--platform $(PLATFORMS) \
